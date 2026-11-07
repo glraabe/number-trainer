@@ -115,7 +115,11 @@
     $('heard').textContent='';
   }
   function parseSpokenNumber(raw) {
-    const s = raw.toLowerCase().replace(/,/g,'').replace(/[^\w\s-]/g,' ').replace(/-/g,' ').trim();
+    let s = raw.toLowerCase().replace(/,/g,'').replace(/[^\w\s-]/g,' ').replace(/-/g,' ').trim();
+    if (!s) return null;
+    s = s.replace(/^(?:the )?(?:number )?(?:is )+/,'')
+         .replace(/^(?:it is |that's |that is |i said )+/,'')
+         .replace(/(?: please| thank you)$/,'').trim();
     if (!s) return null;
     if (/^\d+$/.test(s)) { const n=Number(s); return Number.isSafeInteger(n)?n:null; }
 
@@ -158,9 +162,17 @@
     if(recognition) { try { recognition.stop(); } catch(e){} }
   }
   function handleResult(transcript) {
-    const said=parseSpokenNumber(transcript), target=numbers[index];
+    const target=numbers[index];
+    const candidates=[transcript, ...(window.__numberTrainerAlternatives || [])];
+    window.__numberTrainerAlternatives=[];
+    let said=null, acceptedTranscript=transcript;
+    for(const candidate of candidates) {
+      const parsed=parseSpokenNumber(candidate);
+      if(parsed===target) { said=parsed; acceptedTranscript=candidate; break; }
+      if(said===null) said=parsed;
+    }
     attempts++;
-    $('heard').textContent=`I heard: “${transcript}”`;
+    $('heard').textContent=`I heard: “${acceptedTranscript}”`;
     if(said===target) {
       correct++; tone(true); $('status').className='status good'; $('status').textContent='✓ Correct! Moving to the next number.';
       index++;
@@ -182,24 +194,76 @@
       return;
     }
     if(listening) { stopListening(); return; }
+
     recognition = new SpeechRecognition();
-    recognition.lang='en-US'; recognition.continuous=false; recognition.interimResults=false; recognition.maxAlternatives=3;
-    recognition.onstart=()=>{listening=true;$('micButton').classList.add('listening');$('listenButton').textContent='Listening…';$('status').textContent='Listening. Say the number now.';};
-    recognition.onresult=e=>{
-      const results=e.results[e.results.length-1];
-      let matched=false;
-      for(let i=0;i<results.length;i++) {
-        const transcript=results[i].transcript;
-        if(parseSpokenNumber(transcript)===numbers[index]) { handleResult(transcript); matched=true; break; }
+    recognition.lang='en-US';
+    recognition.continuous=true;
+    recognition.interimResults=true;
+    recognition.maxAlternatives=5;
+
+    let collected = '';
+    let finalized = false;
+    let silenceTimer = null;
+    let maximumTimer = null;
+    const clearListenTimers = () => {
+      if(silenceTimer) clearTimeout(silenceTimer);
+      if(maximumTimer) clearTimeout(maximumTimer);
+      silenceTimer = maximumTimer = null;
+    };
+    const finish = () => {
+      if(finalized) return;
+      finalized = true;
+      clearListenTimers();
+      try { recognition.stop(); } catch(e) {}
+      const transcript = collected.trim();
+      if(transcript) handleResult(transcript);
+      else {
+        $('status').className='status bad';
+        $('status').textContent='I did not catch that. Tap the microphone and try again.';
       }
-      if(!matched) handleResult(results[0].transcript);
+    };
+
+    recognition.onstart=()=>{
+      listening=true;
+      $('micButton').classList.add('listening');
+      $('listenButton').textContent='Listening…';
+      $('status').textContent='Listening. Say the number; I will wait until you finish.';
+      $('heard').textContent='Listening for your complete answer…';
+      maximumTimer=setTimeout(finish,6000);
+    };
+    recognition.onresult=e=>{
+      let parts=[], alternatives=[];
+      for(let i=0;i<e.results.length;i++) {
+        const result=e.results[i];
+        const transcript=result[0]?.transcript?.trim();
+        if(transcript) parts.push(transcript);
+        for(let j=0;j<result.length;j++) {
+          const alt=result[j]?.transcript?.trim();
+          if(alt) alternatives.push(alt);
+        }
+      }
+      collected=parts.join(' ').replace(/\s+/g,' ').trim();
+      window.__numberTrainerAlternatives = alternatives;
+      if(collected) $('heard').textContent=`I heard: “${collected}”`;
+      if(silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer=setTimeout(finish,1200);
     };
     recognition.onerror=e=>{
+      clearListenTimers();
       $('status').className='status bad';
       $('status').textContent=e.error==='not-allowed'?'Microphone permission was denied. Allow microphone access in Chrome.':`Speech recognition error: ${e.error}. Try again.`;
     };
-    recognition.onend=()=>{listening=false;$('micButton').classList.remove('listening');$('listenButton').textContent='Start listening';};
-    try { recognition.start(); } catch(e) { $('status').textContent='Could not start listening. Please try again.'; }
+    recognition.onend=()=>{
+      listening=false;
+      $('micButton').classList.remove('listening');
+      $('listenButton').textContent='Start listening';
+      if(!finalized && collected.trim()) finish();
+    };
+    try { recognition.start(); }
+    catch(e) {
+      clearListenTimers();
+      $('status').textContent='Could not start listening. Please try again.';
+    }
   }
   function showComplete() {
     stopListening(); completed=true;
