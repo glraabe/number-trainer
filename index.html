@@ -118,7 +118,15 @@
     const s = raw.toLowerCase().replace(/,/g,'').replace(/[^\w\s-]/g,' ').replace(/-/g,' ').trim();
     if (!s) return null;
     if (/^\d+$/.test(s)) { const n=Number(s); return Number.isSafeInteger(n)?n:null; }
-    const small = {zero:0,oh:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
+
+    // Common single-digit homophones returned by Android/Chrome speech recognition.
+    // Keep these exact-word matches narrow so unrelated speech is not accepted.
+    const singleDigitAliases = {
+      won:1, to:2, too:2, for:4, fore:4, sex:6, ate:8, oh:0, o:0
+    };
+    if (Object.hasOwn(singleDigitAliases, s)) return singleDigitAliases[s];
+
+    const small = {zero:0,oh:0,o:0,one:1,won:1,two:2,to:2,too:2,three:3,four:4,for:4,fore:4,five:5,six:6,sex:6,seven:7,eight:8,ate:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
     const tens = {twenty:20,thirty:30,forty:40,fourty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
     const words = s.split(/\s+/).filter(w=>w && w!=='and');
     if (!words.length) return null;
