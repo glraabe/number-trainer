@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#152238">
+  <meta name="description" content="A private spoken number-recognition trainer.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <title>Number Trainer</title>
+  <style>
+    :root { color-scheme: light; --navy:#152238; --blue:#2457a7; --muted:#64748b; --line:#dbe3ed; --bg:#f3f6fa; }
+    * { box-sizing:border-box }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--navy); min-height:100vh; }
+    main { max-width:560px; margin:0 auto; padding:20px 16px 36px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 20px; }
+    h1 { font-size:1.35rem; margin:0; letter-spacing:-.02em; }
+    .tag { background:#e4ebf5; color:#29466d; padding:6px 10px; border-radius:999px; font-size:.78rem; font-weight:700; }
+    .card { background:white; border:1px solid var(--line); border-radius:20px; padding:20px; box-shadow:0 8px 28px #1522380c; margin-bottom:14px; }
+    .topline { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:.9rem; font-weight:650; }
+    .progress { height:8px; background:#e8edf4; border-radius:99px; overflow:hidden; margin:12px 0 22px; }
+    .bar { height:100%; width:0; background:var(--blue); transition:width .2s; }
+    .number { font-size:clamp(3rem,15vw,5rem); line-height:1.1; text-align:center; font-weight:800; letter-spacing:-.055em; margin:18px 0 8px; font-variant-numeric:tabular-nums; }
+    .prompt { text-align:center; color:var(--muted); margin:0 0 20px; }
+    button { border:0; border-radius:13px; min-height:50px; padding:12px 16px; font:inherit; font-weight:750; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .primary { background:var(--blue); color:white; width:100%; }
+    .secondary { background:#eaf0f7; color:#203b61; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+    .mic { width:76px; height:76px; border-radius:50%; display:grid; place-items:center; margin:0 auto 12px; background:#eaf0f7; color:var(--blue); font-size:2rem; }
+    .mic.listening { background:#ffe8e8; color:#b42318; animation:pulse 1.1s infinite; }
+    @keyframes pulse { 50% { box-shadow:0 0 0 10px #b4231818; } }
+    .status { min-height:28px; text-align:center; font-weight:700; margin:6px 0 0; }
+    .status.good { color:#16803c; } .status.bad { color:#b42318; }
+    .heard { min-height:22px; text-align:center; color:var(--muted); font-size:.88rem; overflow-wrap:anywhere; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .stat { background:#f5f8fc; border-radius:12px; padding:12px 8px; text-align:center; }
+    .stat strong { display:block; font-size:1.25rem; }
+    .stat span { color:var(--muted); font-size:.76rem; }
+    .small { color:var(--muted); font-size:.82rem; line-height:1.45; }
+    .complete { display:none; text-align:center; }
+    .complete h2 { margin:4px 0 8px; }
+    .hidden { display:none !important; }
+    footer { text-align:center; color:var(--muted); font-size:.75rem; margin-top:18px; }
+    @media (prefers-reduced-motion: reduce) { * { animation:none!important; transition:none!important } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>Number Trainer</h1><span class="tag">SPOKEN PRACTICE</span></header>
+
+  <section class="card" id="practice">
+    <div class="topline"><span id="levelLabel">LEVEL 1</span><span id="countLabel">1 of 5</span></div>
+    <div class="progress"><div class="bar" id="progressBar"></div></div>
+    <div class="number" id="number">—</div>
+    <p class="prompt">Say the number aloud.</p>
+    <button class="mic" id="micButton" aria-label="Start listening">🎙️</button>
+    <button class="primary" id="listenButton">Start listening</button>
+    <p class="status" id="status" aria-live="polite">Tap the microphone and say the number.</p>
+    <p class="heard" id="heard"></p>
+    <div class="actions">
+      <button class="secondary" id="repeatButton">Hear number</button>
+      <button class="secondary" id="newSetButton">New set</button>
+    </div>
+  </section>
+
+  <section class="card complete" id="complete">
+    <div style="font-size:2.5rem">🏆</div>
+    <h2 id="completeTitle">Level complete!</h2>
+    <p id="completeText">You finished this set.</p>
+    <button class="primary" id="nextLevelButton">Start next level</button>
+    <button class="secondary" id="repeatLevelButton" style="width:100%;margin-top:10px">Practice this level again</button>
+  </section>
+
+  <section class="card">
+    <div class="stats">
+      <div class="stat"><strong id="correctStat">0</strong><span>Correct</span></div>
+      <div class="stat"><strong id="attemptStat">0</strong><span>Attempts</span></div>
+      <div class="stat"><strong id="accuracyStat">—</strong><span>Accuracy</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <strong>How levels work</strong>
+    <p class="small">Each level adds five numbers. Every group of five contains one number from each range: 1–9, 10–99, 100–999, 1,000–9,999, and 10,000–99,999. Say each displayed number correctly to move on. Misses do not skip the number.</p>
+    <p class="small" id="supportNote">Microphone access is needed. Speech recognition availability depends on your browser and Android speech services.</p>
+  </section>
+  <footer>No account. Voice is not recorded or saved by this app. Speech recognition may be processed by your browser's speech service.</footer>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const ranges = [[1,9],[10,99],[100,999],[1000,9999],[10000,99999]];
+  let level = 1, numbers = [], index = 0, correct = 0, attempts = 0, recognition = null, listening = false, completed = false;
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function rand(min,max) { return Math.floor(Math.random()*(max-min+1))+min; }
+  function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=rand(0,i);[a[i],a[j]]=[a[j],a[i]];} return a; }
+  function makeSet() {
+    numbers = [];
+    for(let g=0; g<level; g++) for(const [lo,hi] of ranges) numbers.push(rand(lo,hi));
+    shuffle(numbers); index=0; correct=0; attempts=0; completed=false;
+    $('practice').classList.remove('hidden'); $('complete').style.display='none';
+    update();
+  }
+  function update() {
+    $('levelLabel').textContent = `LEVEL ${level}`;
+    $('countLabel').textContent = `${Math.min(index+1,numbers.length)} of ${numbers.length}`;
+    $('number').textContent = numbers[index]?.toLocaleString('en-US') ?? '—';
+    $('progressBar').style.width = `${(index/numbers.length)*100}%`;
+    $('correctStat').textContent = correct;
+    $('attemptStat').textContent = attempts;
+    $('accuracyStat').textContent = attempts ? `${Math.round(correct/attempts*100)}%` : '—';
+    $('status').className='status'; $('status').textContent='Tap the microphone and say the number.';
+    $('heard').textContent='';
+  }
+  function parseSpokenNumber(raw) {
+    const s = raw.toLowerCase().replace(/,/g,'').replace(/[^\w\s-]/g,' ').replace(/-/g,' ').trim();
+    if (!s) return null;
+    if (/^\d+$/.test(s)) { const n=Number(s); return Number.isSafeInteger(n)?n:null; }
+    const small = {zero:0,oh:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
+    const tens = {twenty:20,thirty:30,forty:40,fourty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+    const words = s.split(/\s+/).filter(w=>w && w!=='and');
+    if (!words.length) return null;
+    let total=0, current=0, used=false;
+    for (const w of words) {
+      if (Object.hasOwn(small,w)) { current += small[w]; used=true; }
+      else if (Object.hasOwn(tens,w)) { current += tens[w]; used=true; }
+      else if (w==='hundred') { current = (current || 1)*100; used=true; }
+      else if (w==='thousand') { total += (current || 1)*1000; current=0; used=true; }
+      else return null;
+    }
+    const result=total+current;
+    return used && result>=0 && result<=99999 ? result : null;
+  }
+  function tone(ok) {
+    try {
+      const Ctx=window.AudioContext||window.webkitAudioContext;
+      const ctx=new Ctx(), osc=ctx.createOscillator(), gain=ctx.createGain();
+      osc.type='sine'; osc.frequency.value=ok?880:180;
+      gain.gain.setValueAtTime(.0001,ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(.18,ctx.currentTime+.025);
+      gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+(ok?.22:.32));
+      osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime+(ok?.24:.34));
+      osc.onended=()=>ctx.close();
+    } catch(e) {}
+  }
+  function stopListening() {
+    listening=false; $('micButton').classList.remove('listening'); $('listenButton').textContent='Start listening';
+    if(recognition) { try { recognition.stop(); } catch(e){} }
+  }
+  function handleResult(transcript) {
+    const said=parseSpokenNumber(transcript), target=numbers[index];
+    attempts++;
+    $('heard').textContent=`I heard: “${transcript}”`;
+    if(said===target) {
+      correct++; tone(true); $('status').className='status good'; $('status').textContent='✓ Correct! Moving to the next number.';
+      index++;
+      $('correctStat').textContent=correct; $('attemptStat').textContent=attempts;
+      $('accuracyStat').textContent=`${Math.round(correct/attempts*100)}%`;
+      if(index>=numbers.length) { setTimeout(showComplete,650); }
+      else { setTimeout(update,650); }
+    } else {
+      tone(false); $('status').className='status bad';
+      $('status').textContent=said===null?'I could not recognize that number. Try again.':'Not quite. Try the same number again.';
+      $('attemptStat').textContent=attempts;
+      $('accuracyStat').textContent=`${Math.round(correct/attempts*100)}%`;
+    }
+  }
+  function startListening() {
+    if(!SpeechRecognition) {
+      $('status').className='status bad';
+      $('status').textContent='Speech recognition is not available here. Open this app in Chrome on Android.';
+      return;
+    }
+    if(listening) { stopListening(); return; }
+    recognition = new SpeechRecognition();
+    recognition.lang='en-US'; recognition.continuous=false; recognition.interimResults=false; recognition.maxAlternatives=3;
+    recognition.onstart=()=>{listening=true;$('micButton').classList.add('listening');$('listenButton').textContent='Listening…';$('status').textContent='Listening. Say the number now.';};
+    recognition.onresult=e=>{
+      const results=e.results[e.results.length-1];
+      let matched=false;
+      for(let i=0;i<results.length;i++) {
+        const transcript=results[i].transcript;
+        if(parseSpokenNumber(transcript)===numbers[index]) { handleResult(transcript); matched=true; break; }
+      }
+      if(!matched) handleResult(results[0].transcript);
+    };
+    recognition.onerror=e=>{
+      $('status').className='status bad';
+      $('status').textContent=e.error==='not-allowed'?'Microphone permission was denied. Allow microphone access in Chrome.':`Speech recognition error: ${e.error}. Try again.`;
+    };
+    recognition.onend=()=>{listening=false;$('micButton').classList.remove('listening');$('listenButton').textContent='Start listening';};
+    try { recognition.start(); } catch(e) { $('status').textContent='Could not start listening. Please try again.'; }
+  }
+  function showComplete() {
+    stopListening(); completed=true;
+    $('practice').classList.add('hidden'); $('complete').style.display='block';
+    $('completeTitle').textContent=`Level ${level} complete!`;
+    $('completeText').textContent=`You correctly said all ${numbers.length} numbers. You got ${correct} correct in ${attempts} attempts.`;
+    $('nextLevelButton').textContent=`Start level ${level+1} (${(level+1)*5} numbers)`;
+  }
+  function speakNumber() {
+    if(!('speechSynthesis' in window)) { $('status').textContent='Spoken playback is not available in this browser.'; return; }
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(numbers[index].toString());
+    u.lang='en-US'; speechSynthesis.speak(u);
+  }
+  $('listenButton').addEventListener('click',startListening);
+  $('micButton').addEventListener('click',startListening);
+  $('repeatButton').addEventListener('click',speakNumber);
+  $('newSetButton').addEventListener('click',()=>{stopListening();makeSet();});
+  $('nextLevelButton').addEventListener('click',()=>{level++;makeSet();});
+  $('repeatLevelButton').addEventListener('click',makeSet);
+  if(!SpeechRecognition) $('supportNote').textContent='This browser does not expose speech recognition. Use current Google Chrome on Android and allow microphone access.';
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  makeSet();
+})();
+</script>
+</body>
+</html>
